@@ -154,7 +154,7 @@ description['rap'] = ['Female',
                         'Talking',
                         'Gathering',
                         'Holding',
-                        'Pusing',
+                        'Pushing',
                         'Pulling',
                         'CarryingbyArm',
                         'CarryingbyHand']
