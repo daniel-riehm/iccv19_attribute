@@ -1,13 +1,11 @@
 import sys
+
 import torch
-import json
 import cv2
 import pandas as pd
 from model.inception_iccv import inception_iccv
 from torchvision import transforms
 from utils.datasets import description
-from pprint import pprint
-from time import time
 
 
 if __name__ == "__main__":
@@ -35,8 +33,13 @@ if __name__ == "__main__":
         ],
     )
 
-    results = []
-    frame_number = 0
+    for label in description["rap"]:
+        df.insert(len(df.columns), label, 0.0)
+
+    df = df[df["confidence"] >= 0.8]
+    df = df[(df["class"] == "person") | (df["class"] == "kitware-person")]
+
+    frame_number = 1
     while True:
         have_img, frame_img = video.read()
         if not have_img:
@@ -44,10 +47,12 @@ if __name__ == "__main__":
         frame_img = cv2.cvtColor(frame_img, cv2.COLOR_BGR2RGB)
 
         frame_df = df[(df["frame"] == frame_number)]
-        for row in frame_df.itertuples(index=False):
-            if row.confidence < 0.5:
-                continue
+        indices_to_drop = []
+        for row in frame_df.itertuples():
             img = frame_img[row.y0 : row.y1, row.x0 : row.x1]
+            if not img.size:
+                indices_to_drop.append(row.Index)
+                continue
             img = transforms.ToTensor()(img).unsqueeze(0).cuda(non_blocking=True)
             img = transforms.Resize(size=(256, 128))(img)
             img = transforms.Normalize(
@@ -58,9 +63,23 @@ if __name__ == "__main__":
                 torch.max(torch.max(result[0], result[1]), result[2]), result[3]
             )
             result = torch.sigmoid(result.detach()).cpu().numpy().squeeze()
-            result = dict(zip(description["rap"], map(float, result)))
-            results.append({"frame": frame_number, "iccv19_attribute_rap": result})
-        print(frame_number, time())
+            for label, value in zip(description["rap"], map(float, result)):
+                df.at[row.Index, label] = value
+        df.drop(index=indices_to_drop, inplace=True)
+        print(frame_number)
         frame_number += 1
-    with open(sys.argv[3]) as f:
-        json.dump(results, f)
+    df.drop(
+        columns=[
+            "file",
+            "x0",
+            "y0",
+            "x1",
+            "y1",
+            "confidence",
+            "target length",
+            "class",
+            "class confidence",
+        ],
+        inplace=True,
+    )
+    df.to_csv(sys.argv[3], index=False, float_format="%.5f")
